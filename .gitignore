@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+playwright_sessions/
+output/
+logs/
+data/
+models/
+*.gguf
+*.safetensors
+credentials/

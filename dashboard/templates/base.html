@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}KDP Dashboard{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <nav class="navbar">
+    <a class="nav-brand" href="/">📚 KDP Books</a>
+    <ul class="nav-links">
+      <li><a href="/" {% if request.url.path == "/" %}class="active"{% endif %}>Pipeline</a></li>
+      <li><a href="/earnings" {% if request.url.path == "/earnings" %}class="active"{% endif %}>Earnings</a></li>
+      <li><a href="/books" {% if "/books" in request.url.path %}class="active"{% endif %}>Catalog</a></li>
+      <li><a href="/niches" {% if request.url.path == "/niches" %}class="active"{% endif %}>Niches</a></li>
+    </ul>
+    <span id="status-badge" class="badge badge-idle">Idle</span>
+  </nav>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <script>
+    // Poll pipeline status every 5 s and update badge
+    async function pollStatus() {
+      try {
+        const r = await fetch('/api/status');
+        const d = await r.json();
+        const badge = document.getElementById('status-badge');
+        if (badge) {
+          badge.textContent = d.running ? 'Running' : 'Idle';
+          badge.className = 'badge ' + (d.running ? 'badge-running' : 'badge-idle');
+        }
+      } catch (_) {}
+    }
+    pollStatus();
+    setInterval(pollStatus, 5000);
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}{{ book.title or book.slug }} — KDP Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <a href="/books" class="back-link">← Catalog</a>
+  <h1>{{ book.title or book.slug or "Book #" ~ book.id }}</h1>
+  <span class="badge badge-{{ book.kdp_status or 'pending' }}">{{ book.kdp_status or "pending" }}</span>
+</div>
+
+<div class="grid grid-2">
+  <!-- Metadata -->
+  <section class="card">
+    <h2>Metadata</h2>
+    <table class="table">
+      <tbody>
+        <tr><td>ID</td><td class="mono">{{ book.id }}</td></tr>
+        <tr><td>Slug</td><td class="mono">{{ book.slug or "—" }}</td></tr>
+        <tr><td>Title</td><td>{{ book.title or "—" }}</td></tr>
+        <tr><td>Subtitle</td><td>{{ book.subtitle or "—" }}</td></tr>
+        <tr><td>Author</td><td>{{ book.author or "—" }}</td></tr>
+        <tr><td>ASIN</td><td class="mono">{{ book.asin or "—" }}</td></tr>
+        <tr><td>Status</td><td><span class="badge badge-{{ book.kdp_status or 'pending' }}">{{ book.kdp_status or "pending" }}</span></td></tr>
+        <tr><td>Pages</td><td class="mono">{{ book.page_count or "—" }}</td></tr>
+        <tr><td>Price</td><td class="mono">${{ "%.2f"|format(book.price_usd) if book.price_usd else "—" }}</td></tr>
+        <tr><td>Run Date</td><td class="mono">{{ book.run_date or "—" }}</td></tr>
+        <tr><td>Created</td><td class="mono">{{ book.created_at or "—" }}</td></tr>
+        <tr><td>Uploaded</td><td class="mono">{{ book.uploaded_at or "—" }}</td></tr>
+        <tr><td>Live</td><td class="mono">{{ book.live_at or "—" }}</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Description / keywords -->
+  <section class="card">
+    <h2>Description</h2>
+    <p class="desc-text">{{ book.description or "No description." }}</p>
+
+    {% if book.keywords %}
+    <h3>Keywords</h3>
+    <p class="mono small">{{ book.keywords }}</p>
+    {% endif %}
+
+    {% if book.categories %}
+    <h3>Categories</h3>
+    <p class="mono small">{{ book.categories }}</p>
+    {% endif %}
+
+    {% if book.interior_pdf %}
+    <h3>Interior PDF</h3>
+    <p class="mono small">{{ book.interior_pdf }}</p>
+    {% endif %}
+    {% if book.cover_pdf %}
+    <h3>Cover PDF</h3>
+    <p class="mono small">{{ book.cover_pdf }}</p>
+    {% endif %}
+  </section>
+</div>
+
+<!-- Image Previews -->
+{% if images %}
+<section class="card">
+  <h2>Page Previews ({{ images|length }} images)</h2>
+  <div class="image-grid">
+    {% for img in images %}
+    <div class="image-thumb">
+      <a href="{{ img }}" target="_blank">
+        <img src="{{ img }}" alt="Page preview" loading="lazy" />
+      </a>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% else %}
+<section class="card">
+  <h2>Page Previews</h2>
+  <p class="empty">No images found for this book.</p>
+</section>
+{% endif %}
+{% endblock %}

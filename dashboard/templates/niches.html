@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Niche Research — KDP Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Niche Research</h1>
+  <button id="btn-research" class="btn btn-primary {% if running %}disabled{% endif %}"
+          onclick="triggerResearch()" {% if running %}disabled{% endif %}>
+    🔍 Research Now
+  </button>
+</div>
+
+<div id="research-msg" class="run-msg hidden"></div>
+
+<section class="card">
+  <h2>Researched Niches — Last 30 Days</h2>
+  {% if niches %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Niche</th>
+          <th>Seed</th>
+          <th class="num">Opp Score</th>
+          <th class="num">BSR Median</th>
+          <th class="num">Avg Reviews</th>
+          <th>Selected</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for n in niches %}
+        <tr class="{% if n.selected %}row-selected{% endif %}">
+          <td class="mono">{{ (n.run_date or "")[:10] }}</td>
+          <td>{{ n.niche }}</td>
+          <td class="mono">{{ n.seed or "—" }}</td>
+          <td class="num mono">{{ "%.2f"|format(n.opp_score) if n.opp_score else "—" }}</td>
+          <td class="num mono">{{ n.bsr_median or "—" }}</td>
+          <td class="num mono">{{ "%.0f"|format(n.avg_reviews) if n.avg_reviews else "—" }}</td>
+          <td>
+            {% if n.selected %}
+            <span class="badge badge-ok">✓ Selected</span>
+            {% else %}
+            <span class="badge badge-idle">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">No niche research data yet. Click "Research Now" to start.</p>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  async function triggerResearch() {
+    const btn = document.getElementById('btn-research');
+    btn.disabled = true;
+    const r = await fetch('/api/research-niches', { method: 'POST' });
+    const d = await r.json();
+    const el = document.getElementById('research-msg');
+    el.textContent = d.ok ? `Research started (PID ${d.pid})` : d.error;
+    el.className = 'run-msg ' + (d.ok ? 'msg-ok' : 'msg-error');
+    setTimeout(() => { el.className = 'run-msg hidden'; }, 5000);
+    if (!d.ok) btn.disabled = false;
+  }
+</script>
+{% endblock %}

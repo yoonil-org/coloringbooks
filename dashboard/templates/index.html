@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% block title %}Pipeline — KDP Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Pipeline Control</h1>
+  {% if running %}
+  <span class="badge badge-running">Pipeline Running</span>
+  {% else %}
+  <span class="badge badge-idle">Idle</span>
+  {% endif %}
+</div>
+
+<div class="grid grid-2">
+  <!-- Control Panel -->
+  <section class="card">
+    <h2>Controls</h2>
+    <div class="btn-group">
+      <button id="btn-run" class="btn btn-primary" onclick="triggerRun()">
+        ▶ Run Now
+      </button>
+      <button id="btn-dry" class="btn btn-secondary" onclick="triggerDryRun()">
+        🧪 Dry Run
+      </button>
+      <button id="btn-stop" class="btn btn-danger" onclick="stopPipeline()" style="display:none">
+        ⏹ Stop
+      </button>
+    </div>
+
+    <form class="niche-form" onsubmit="triggerNicheRun(event)">
+      <label>Custom Niche</label>
+      <div class="input-row">
+        <input type="text" id="niche-input" name="niche"
+               placeholder="e.g. kawaii cats" autocomplete="off" />
+        <button type="submit" class="btn btn-primary">Run</button>
+      </div>
+    </form>
+
+    <div id="run-msg" class="run-msg hidden"></div>
+  </section>
+
+  <!-- System Status -->
+  <section class="card" id="system-card">
+    <h2>System Status</h2>
+    <ul class="status-list">
+      <li>
+        <span class="label">Pipeline</span>
+        <span id="sys-pipeline" class="badge {% if running %}badge-running{% else %}badge-idle{% endif %}">
+          {% if running %}Running{% else %}Idle{% endif %}
+        </span>
+      </li>
+      <li>
+        <span class="label">Ollama</span>
+        <span id="sys-ollama" class="badge {% if ollama.online %}badge-ok{% else %}badge-error{% endif %}">
+          {% if ollama.online %}Online{% else %}Offline{% endif %}
+        </span>
+      </li>
+      <li>
+        <span class="label">SD Model</span>
+        <span id="sys-sd" class="badge {% if sd_cached %}badge-ok{% else %}badge-warn{% endif %}">
+          {% if sd_cached %}Cached{% else %}Not Cached{% endif %}
+        </span>
+      </li>
+      <li>
+        <span class="label">Disk Free</span>
+        <span id="sys-disk" class="mono">{{ disk.free_gb }} GB ({{ 100 - disk.pct_used }}% free)</span>
+      </li>
+      <li>
+        <span class="label">Last Run</span>
+        <span id="sys-lastrun" class="mono">
+          {% if last_run %}
+            {{ last_run.started_at[:16] if last_run.started_at else "—" }}
+            <span class="badge {% if last_run.status == 'success' %}badge-ok{% elif last_run.status == 'running' %}badge-running{% else %}badge-error{% endif %}">
+              {{ last_run.status }}
+            </span>
+          {% else %}
+            No runs yet
+          {% endif %}
+        </span>
+      </li>
+    </ul>
+    <div class="earnings-mini">
+      <span>All-time royalties: <strong>${{ "%.2f"|format(total_royalties) }}</strong></span>
+      <span>Units sold: <strong>{{ total_units }}</strong></span>
+    </div>
+  </section>
+</div>
+
+<!-- Last Run Details -->
+{% if last_run %}
+<section class="card">
+  <h2>Last Run</h2>
+  <table class="table">
+    <tbody>
+      <tr><td>Date</td><td class="mono">{{ last_run.run_date }}</td></tr>
+      <tr><td>Status</td>
+          <td><span class="badge {% if last_run.status == 'success' %}badge-ok{% elif last_run.status == 'running' %}badge-running{% else %}badge-error{% endif %}">{{ last_run.status }}</span></td></tr>
+      <tr><td>Niche</td><td class="mono">{{ last_run.niche_selected or "—" }}</td></tr>
+      <tr><td>ASIN</td><td class="mono">{{ last_run.asin_produced or "—" }}</td></tr>
+      <tr><td>Duration</td><td class="mono">{{ format_duration(last_run.duration_sec) }}</td></tr>
+      {% if last_run.error_message %}
+      <tr><td>Error</td><td class="error-text mono">{{ last_run.error_message }}</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<!-- Live Log -->
+<section class="card">
+  <div class="card-header-row">
+    <h2>Live Log <small>(last 50 lines)</small></h2>
+    <label class="toggle-label">
+      <input type="checkbox" id="auto-scroll" checked />
+      Auto-scroll
+    </label>
+  </div>
+  <pre id="log-box" class="log-box">{% for line in log_lines %}{{ line }}
+{% endfor %}</pre>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function showMsg(msg, ok) {
+    const el = document.getElementById('run-msg');
+    el.textContent = msg;
+    el.className = 'run-msg ' + (ok ? 'msg-ok' : 'msg-error');
+    setTimeout(() => { el.className = 'run-msg hidden'; }, 5000);
+  }
+
+  async function triggerRun() {
+    setButtonsDisabled(true);
+    const r = await fetch('/api/run', { method: 'POST' });
+    const d = await r.json();
+    setButtonsDisabled(false);
+    showMsg(d.ok ? `Pipeline started (PID ${d.pid})` : d.error, d.ok);
+  }
+
+  async function triggerDryRun() {
+    setButtonsDisabled(true);
+    const r = await fetch('/api/dry-run', { method: 'POST' });
+    const d = await r.json();
+    setButtonsDisabled(false);
+    showMsg(d.ok ? `Dry run started (PID ${d.pid})` : d.error, d.ok);
+  }
+
+  async function stopPipeline() {
+    if (!confirm('Stop the running pipeline?')) return;
+    const r = await fetch('/api/stop', { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) {
+      alert('Pipeline stopped.');
+    } else {
+      alert('Error: ' + d.error);
+    }
+  }
+
+  async function triggerNicheRun(e) {
+    e.preventDefault();
+    const niche = document.getElementById('niche-input').value.trim();
+    if (!niche) { showMsg('Enter a niche first.', false); return; }
+    setButtonsDisabled(true);
+    const fd = new FormData();
+    fd.append('niche', niche);
+    const r = await fetch('/api/run-niche', { method: 'POST', body: fd });
+    const d = await r.json();
+    setButtonsDisabled(false);
+    showMsg(d.ok ? `Pipeline started for "${niche}" (PID ${d.pid})` : d.error, d.ok);
+  }
+
+  function setButtonsDisabled(v) {
+    ['btn-run','btn-dry'].forEach(id => {
+      document.getElementById(id).disabled = v;
+    });
+  }
+
+  // Log polling
+  async function pollLog() {
+    try {
+      const r = await fetch('/api/log?n=50');
+      const d = await r.json();
+      const box = document.getElementById('log-box');
+      box.textContent = d.lines.join('\n');
+      const autoScroll = document.getElementById('auto-scroll').checked;
+      if (autoScroll) box.scrollTop = box.scrollHeight;
+    } catch (_) {}
+  }
+  pollLog();
+  setInterval(pollLog, 3000);
+
+  // System status polling
+  async function pollSystem() {
+    try {
+      const r = await fetch('/api/system');
+      const d = await r.json();
+
+      const pipeEl = document.getElementById('sys-pipeline');
+      if (pipeEl) {
+        pipeEl.textContent = d.running ? 'Running' : 'Idle';
+        pipeEl.className = 'badge ' + (d.running ? 'badge-running' : 'badge-idle');
+      }
+
+      const ollamaEl = document.getElementById('sys-ollama');
+      if (ollamaEl) {
+        ollamaEl.textContent = d.ollama.online ? 'Online' : 'Offline';
+        ollamaEl.className = 'badge ' + (d.ollama.online ? 'badge-ok' : 'badge-error');
+      }
+
+      const diskEl = document.getElementById('sys-disk');
+      if (diskEl && d.disk) {
+        const pctFree = (100 - d.disk.pct_used).toFixed(1);
+        diskEl.textContent = `${d.disk.free_gb} GB (${pctFree}% free)`;
+      }
+    } catch (_) {}
+  }
+  setInterval(pollSystem, 10000);
+</script>
+{% endblock %}
