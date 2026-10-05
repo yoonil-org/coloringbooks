@@ -6,7 +6,7 @@ from utils import logger, image_utils
 
 log = logger.get()
 
-SDXL_MODEL = Path("/home/worker/Workspace/coloring-books/models/sd_xl_base_1.0.safetensors")
+SDXL_MODEL = Path("/home/worker/Workspace/coloring-books/models/sd_xl_base_1.0-q4k.gguf")
 LORA_DIR   = Path("/home/worker/Workspace/coloring-books/models/loras")
 
 # LoRA filenames and their weights
@@ -34,13 +34,13 @@ def _try_load_sdcpp():
         # Build lora_model_dir string for sd-cpp
         pipe = sd.StableDiffusion(
             model_path=str(SDXL_MODEL),
-            wtype="f16",
+            wtype="q4_k",
             n_threads=-1,
             vae_decode_only=True,
-            lora_model_dir=str(LORA_DIR),
+            keep_vae_on_cpu=True,
         )
         _sd_cpp_pipe = pipe
-        log.info("SDXL sd-cpp pipeline loaded on GPU (OpenCL) [f16]")
+        log.info("SDXL sd-cpp pipeline loaded on GPU (OpenCL) [q4_k]")
         return _sd_cpp_pipe
     except Exception as e:
         log.warning(f"sd-cpp SDXL load failed: {e}")
@@ -49,29 +49,23 @@ def _try_load_sdcpp():
 
 # SDXL trigger words: ColoringBookAF activates ColoringBookRedmond, LineAniAF activates LineAni
 PROMPT_TEMPLATE = (
-    "ColoringBookAF LineAniAF, coloring book page of {subject}, "
-    "thick bold black outlines only, clean crisp line art, pure white background, "
-    "no shading, no gray, no color fills, no gradients, "
-    "intricate details, symmetric composition, printable adult coloring book page, "
-    "high contrast line art, professional illustration"
+    "children's coloring book page, cute {subject}, "
+    "thick bold black outlines, large open white areas to color, "
+    "simple clean line art, pure white background, cartoon style, "
+    "friendly cute design, minimal detail, no shading, no fills"
 )
 
 NEGATIVE_PROMPT = (
     "color, colours, gray, grey, shadow, shading, gradient, blur, smudge, "
-    "photo, realistic, 3d render, watermark, text, signature, low quality, "
-    "cropped, deformed, noise, grain, dark background, filled areas, "
-    "solid black areas, messy lines, sketch marks, anime style"
+    "photo, realistic, 3d render, watermark, text, signature, logo, url, "
+    "copyright, website, low quality, cropped, deformed, noise, grain, "
+    "dark background, black background, filled areas, solid black areas, messy lines, "
+    "intricate, complex, adult coloring book, sketch marks, anime"
 )
 
 
 def _build_lora_prompt(base_prompt: str) -> str:
-    """Append sd-cpp LoRA syntax to prompt: <lora:filename:weight>"""
-    lora_tags = " ".join(
-        f"<lora:{name}:{weight}>"
-        for name, weight in LORAS
-        if (LORA_DIR / name).exists()
-    )
-    return f"{base_prompt} {lora_tags}".strip()
+    return base_prompt
 
 
 def _generate_sdcpp(pipe, prompt, seed) -> "PIL.Image.Image":

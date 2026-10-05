@@ -3,19 +3,24 @@ from PIL import Image, ImageDraw, ImageFont
 import config
 
 
-def threshold_to_bw(img: Image.Image, threshold: int = 128) -> Image.Image:
-    """Convert to B&W. Auto-inverts if background is dark (SD sometimes generates inverted images)."""
+def threshold_to_bw(img: Image.Image, threshold: int = 220) -> Image.Image:
+    """Convert to B&W coloring page: pixels darker than threshold become black, rest white."""
     import numpy as np
-    gray = img.convert("L")
-    arr = np.array(gray)
-    # Sample corners to detect background color
-    h, w = arr.shape
-    corners = [arr[0,0], arr[0,w-1], arr[h-1,0], arr[h-1,w-1]]
-    bg = sum(corners) / 4
-    if bg < 128:
-        # Dark background — invert before thresholding
-        gray = Image.fromarray(255 - arr)
-    return gray.point(lambda p: 255 if p >= threshold else 0, "L")
+
+    gray = np.array(img.convert("L"))
+
+    # Sample border pixels (not just corners) to detect dark background
+    h, w = gray.shape
+    border = np.concatenate([
+        gray[0, :], gray[h-1, :], gray[:, 0], gray[:, w-1]
+    ])
+    if border.mean() < 128:
+        gray = 255 - gray
+
+    # High threshold: only near-black pixels become black, everything else white
+    result = np.where(gray < threshold, 0, 255).astype(np.uint8)
+
+    return Image.fromarray(result)
 
 
 def upscale_to_kdp(img: Image.Image) -> Image.Image:
