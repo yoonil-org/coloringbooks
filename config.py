@@ -10,10 +10,10 @@ DB_PATH = DATA_DIR / "coloring_books.db"
 # SD model
 SD_MODEL_ID = "Linaqruf/anything-v3-1"
 SD_DEVICE = "xpu"  # falls back to cpu in image_generator if xpu unavailable
-SD_WIDTH = 512
-SD_HEIGHT = 640
-SD_STEPS = 20
-SD_GUIDANCE = 8.5
+SD_WIDTH = 1024
+SD_HEIGHT = 1024
+SD_STEPS = 30
+SD_GUIDANCE = 7.5
 
 # Book specs
 PAGES_PER_BOOK = 30

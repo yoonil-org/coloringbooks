@@ -6,90 +6,78 @@ from utils import logger, image_utils
 
 log = logger.get()
 
-# sd-cpp can load .safetensors directly — use the cached HF model file
-SAFETENSORS_MODEL = Path(
-    "/home/worker/.cache/huggingface/hub/models--Linaqruf--anything-v3-1"
-    "/snapshots/907b769ec43b228c9943b4df5ea193d6e885f840/anything-v3-2.safetensors"
-)
-# GGUF path kept as fallback if user downloads one later
-GGUF_MODEL = Path("/home/worker/Workspace/coloring-books/models/anything-v3-q8_0.gguf")
+SDXL_MODEL = Path("/home/worker/Workspace/coloring-books/models/sd_xl_base_1.0.safetensors")
+LORA_DIR   = Path("/home/worker/Workspace/coloring-books/models/loras")
+
+# LoRA filenames and their weights
+LORAS = [
+    ("ColoringBookRedmond-ColoringBook-ColoringBookAF.safetensors", 0.9),
+    ("LineAniRedmondV2-Lineart-LineAniAF.safetensors", 0.7),
+]
 
 _sd_cpp_pipe = None
-_diffusers_pipe = None
 
 
 def _try_load_sdcpp():
-    """Load sd-cpp with OpenCL (Intel Arc GPU). Tries GGUF first, then .safetensors."""
     global _sd_cpp_pipe
     if _sd_cpp_pipe is not None:
         return _sd_cpp_pipe
 
-    # Prefer GGUF if available, else use safetensors from HF cache
-    if GGUF_MODEL.exists():
-        model_path = GGUF_MODEL
-        wtype = "q8_0"
-    elif SAFETENSORS_MODEL.exists():
-        model_path = SAFETENSORS_MODEL
-        wtype = "f16"
-    else:
-        log.warning("No GPU model found (GGUF or safetensors) — skipping GPU path")
+    if not SDXL_MODEL.exists():
+        log.warning(f"SDXL model not found at {SDXL_MODEL} — cannot generate")
         return None
 
     try:
         import stable_diffusion_cpp as sd
-        log.info(f"Loading model via sd-cpp (OpenCL/GPU): {model_path.name}")
+        log.info(f"Loading SDXL model via sd-cpp (OpenCL/GPU): {SDXL_MODEL.name}")
+
+        # Build lora_model_dir string for sd-cpp
         pipe = sd.StableDiffusion(
-            model_path=str(model_path),
-            wtype=wtype,
+            model_path=str(SDXL_MODEL),
+            wtype="f16",
             n_threads=-1,
             vae_decode_only=True,
+            lora_model_dir=str(LORA_DIR),
         )
         _sd_cpp_pipe = pipe
-        log.info(f"sd-cpp pipeline loaded on GPU (OpenCL) [{wtype}]")
+        log.info("SDXL sd-cpp pipeline loaded on GPU (OpenCL) [f16]")
         return _sd_cpp_pipe
     except Exception as e:
-        log.warning(f"sd-cpp GPU load failed: {e} — falling back to CPU diffusers")
+        log.warning(f"sd-cpp SDXL load failed: {e}")
         return None
 
 
-def _load_diffusers():
-    """Load HuggingFace diffusers pipeline on CPU."""
-    global _diffusers_pipe
-    if _diffusers_pipe is not None:
-        return _diffusers_pipe
-    import torch
-    from diffusers import StableDiffusionPipeline
-    torch.set_num_threads(torch.get_num_threads())
-    log.info(f"Loading diffusers model '{config.SD_MODEL_ID}' on CPU ({torch.get_num_threads()} threads)")
-    pipe = StableDiffusionPipeline.from_pretrained(
-        config.SD_MODEL_ID,
-        torch_dtype=torch.float32,
-        safety_checker=None,
-        requires_safety_checker=False,
-    )
-    pipe = pipe.to("cpu")
-    pipe.enable_attention_slicing(1)
-    _diffusers_pipe = pipe
-    log.info("Diffusers pipeline loaded on CPU")
-    return _diffusers_pipe
-
-
+# SDXL trigger words: ColoringBookAF activates ColoringBookRedmond, LineAniAF activates LineAni
 PROMPT_TEMPLATE = (
-    "{subject} scene, adult coloring book page, thick bold black outlines, "
-    "clean line art, no shading, no gray fills, no color, pure white background, "
-    "intricate details, symmetric composition, highly detailed illustration"
+    "ColoringBookAF LineAniAF, coloring book page of {subject}, "
+    "thick bold black outlines only, clean crisp line art, pure white background, "
+    "no shading, no gray, no color fills, no gradients, "
+    "intricate details, symmetric composition, printable adult coloring book page, "
+    "high contrast line art, professional illustration"
 )
 
 NEGATIVE_PROMPT = (
-    "color, gray, shadow, shading, gradient, blur, photo, realistic, 3d render, "
-    "watermark, text, signature, low quality, cropped, off-center, deformed, "
-    "noise, grain, dark background, filled areas"
+    "color, colours, gray, grey, shadow, shading, gradient, blur, smudge, "
+    "photo, realistic, 3d render, watermark, text, signature, low quality, "
+    "cropped, deformed, noise, grain, dark background, filled areas, "
+    "solid black areas, messy lines, sketch marks, anime style"
 )
 
 
+def _build_lora_prompt(base_prompt: str) -> str:
+    """Append sd-cpp LoRA syntax to prompt: <lora:filename:weight>"""
+    lora_tags = " ".join(
+        f"<lora:{name}:{weight}>"
+        for name, weight in LORAS
+        if (LORA_DIR / name).exists()
+    )
+    return f"{base_prompt} {lora_tags}".strip()
+
+
 def _generate_sdcpp(pipe, prompt, seed) -> "PIL.Image.Image":
+    full_prompt = _build_lora_prompt(prompt)
     results = pipe.generate_image(
-        prompt=prompt,
+        prompt=full_prompt,
         negative_prompt=NEGATIVE_PROMPT,
         width=config.SD_WIDTH,
         height=config.SD_HEIGHT,
@@ -100,22 +88,6 @@ def _generate_sdcpp(pipe, prompt, seed) -> "PIL.Image.Image":
     return results[0]
 
 
-def _generate_diffusers(pipe, prompt, seed) -> "PIL.Image.Image":
-    import torch
-    generator = torch.Generator("cpu").manual_seed(seed)
-    result = pipe(
-        prompt=prompt,
-        negative_prompt=NEGATIVE_PROMPT,
-        width=config.SD_WIDTH,
-        height=config.SD_HEIGHT,
-        num_inference_steps=config.SD_STEPS,
-        guidance_scale=config.SD_GUIDANCE,
-        generator=generator,
-        num_images_per_prompt=1,
-    )
-    return result.images[0]
-
-
 def run(niche: str, output_dir: Path, page_count: int = None) -> list[Path]:
     if page_count is None:
         page_count = config.PAGES_PER_BOOK
@@ -123,15 +95,12 @@ def run(niche: str, output_dir: Path, page_count: int = None) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     log.info(f"Generating {page_count} images for niche: '{niche}'")
 
-    sdcpp = _try_load_sdcpp()
-    if sdcpp is None:
-        pipe = _load_diffusers()
-        backend = "cpu-diffusers"
-    else:
-        pipe = sdcpp
-        backend = "gpu-opencl"
+    pipe = _try_load_sdcpp()
+    if pipe is None:
+        log.error("SDXL model not available — cannot generate images")
+        return []
 
-    log.info(f"Using backend: {backend}")
+    log.info("Using backend: gpu-opencl (SDXL)")
     prompt = PROMPT_TEMPLATE.format(subject=niche)
     base_seed = abs(hash(niche)) % (2**31)
     paths = []
@@ -143,19 +112,13 @@ def run(niche: str, output_dir: Path, page_count: int = None) -> list[Path]:
             paths.append(out_path)
             continue
 
-        log.info(f"Generating page {i+1}/{page_count} [{backend}]")
+        log.info(f"Generating page {i+1}/{page_count} [gpu-opencl SDXL]")
         try:
-            if backend == "gpu-opencl":
-                img = _generate_sdcpp(pipe, prompt, seed=base_seed + i)
-            else:
-                img = _generate_diffusers(pipe, prompt, seed=base_seed + i)
+            img = _generate_sdcpp(pipe, prompt, seed=base_seed + i)
         except Exception as e:
             log.warning(f"Page {i+1} generation failed ({e}) — retrying")
             try:
-                if backend == "gpu-opencl":
-                    img = _generate_sdcpp(pipe, prompt, seed=base_seed + i + 1000)
-                else:
-                    img = _generate_diffusers(pipe, prompt, seed=base_seed + i + 1000)
+                img = _generate_sdcpp(pipe, prompt, seed=base_seed + i + 1000)
             except Exception as e2:
                 log.error(f"Page {i+1} retry also failed: {e2} — skipping")
                 continue
@@ -169,5 +132,5 @@ def run(niche: str, output_dir: Path, page_count: int = None) -> list[Path]:
         img.save(str(out_path), dpi=(config.DPI, config.DPI))
         paths.append(out_path)
 
-    log.info(f"Image generation complete: {len(paths)}/{page_count} pages [{backend}]")
+    log.info(f"Image generation complete: {len(paths)}/{page_count} pages [SDXL]")
     return paths
