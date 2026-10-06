@@ -3,13 +3,14 @@ from PIL import Image, ImageDraw, ImageFont
 import config
 
 
-def threshold_to_bw(img: Image.Image, threshold: int = 220) -> Image.Image:
-    """Convert to B&W coloring page: pixels darker than threshold become black, rest white."""
+def threshold_to_bw(img: Image.Image, threshold: int = 128) -> Image.Image:
+    """Convert to clean B&W line art. SDXL already outputs near-grayscale line art,
+    so we just clean up gray mid-tones without destroying fine lines."""
     import numpy as np
 
     gray = np.array(img.convert("L"))
 
-    # Sample border pixels (not just corners) to detect dark background
+    # Detect dark background and invert
     h, w = gray.shape
     border = np.concatenate([
         gray[0, :], gray[h-1, :], gray[:, 0], gray[:, w-1]
@@ -17,7 +18,7 @@ def threshold_to_bw(img: Image.Image, threshold: int = 220) -> Image.Image:
     if border.mean() < 128:
         gray = 255 - gray
 
-    # High threshold: only near-black pixels become black, everything else white
+    # Gentle threshold: only clearly dark pixels become black, rest white
     result = np.where(gray < threshold, 0, 255).astype(np.uint8)
 
     return Image.fromarray(result)

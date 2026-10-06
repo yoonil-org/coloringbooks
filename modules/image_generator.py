@@ -6,7 +6,7 @@ from utils import logger, image_utils
 
 log = logger.get()
 
-SDXL_MODEL = Path("/home/worker/Workspace/coloring-books/models/sd_xl_base_1.0-q4k.gguf")
+SDXL_MODEL = Path("/home/worker/Workspace/coloring-books/models/sd_xl_base_1.0.safetensors")
 LORA_DIR   = Path("/home/worker/Workspace/coloring-books/models/loras")
 
 # LoRA filenames and their weights
@@ -29,18 +29,18 @@ def _try_load_sdcpp():
 
     try:
         import stable_diffusion_cpp as sd
-        log.info(f"Loading SDXL model via sd-cpp (OpenCL/GPU): {SDXL_MODEL.name}")
-
-        # Build lora_model_dir string for sd-cpp
+        # Intel Arc OpenCL driver cannot compile GEGLU/SwiGLU kernels used by SDXL.
+        # offload_params_to_cpu=True keeps UNet in CPU RAM and avoids GPU kernel compile.
+        log.info(f"Loading SDXL model via sd-cpp (CPU offload): {SDXL_MODEL.name}")
         pipe = sd.StableDiffusion(
             model_path=str(SDXL_MODEL),
-            wtype="q4_k",
+            wtype="f16",
             n_threads=-1,
             vae_decode_only=True,
-            keep_vae_on_cpu=True,
+            offload_params_to_cpu=True,
         )
         _sd_cpp_pipe = pipe
-        log.info("SDXL sd-cpp pipeline loaded on GPU (OpenCL) [q4_k]")
+        log.info("SDXL sd-cpp pipeline loaded [f16, CPU-offload]")
         return _sd_cpp_pipe
     except Exception as e:
         log.warning(f"sd-cpp SDXL load failed: {e}")
@@ -77,6 +77,7 @@ def _generate_sdcpp(pipe, prompt, seed) -> "PIL.Image.Image":
         height=config.SD_HEIGHT,
         sample_steps=config.SD_STEPS,
         cfg_scale=config.SD_GUIDANCE,
+        sample_method=getattr(config, "SD_SAMPLER", "euler_a"),
         seed=seed,
     )
     return results[0]
@@ -94,7 +95,7 @@ def run(niche: str, output_dir: Path, page_count: int = None) -> list[Path]:
         log.error("SDXL model not available — cannot generate images")
         return []
 
-    log.info("Using backend: gpu-opencl (SDXL)")
+    log.info("Using backend: cpu-offload (SDXL)")
     prompt = PROMPT_TEMPLATE.format(subject=niche)
     base_seed = abs(hash(niche)) % (2**31)
     paths = []
@@ -106,7 +107,7 @@ def run(niche: str, output_dir: Path, page_count: int = None) -> list[Path]:
             paths.append(out_path)
             continue
 
-        log.info(f"Generating page {i+1}/{page_count} [gpu-opencl SDXL]")
+        log.info(f"Generating page {i+1}/{page_count} [cpu-offload SDXL]")
         try:
             img = _generate_sdcpp(pipe, prompt, seed=base_seed + i)
         except Exception as e:

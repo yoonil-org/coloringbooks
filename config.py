@@ -12,8 +12,9 @@ SD_MODEL_ID = "Linaqruf/anything-v3-1"
 SD_DEVICE = "xpu"  # falls back to cpu in image_generator if xpu unavailable
 SD_WIDTH = 768
 SD_HEIGHT = 768
-SD_STEPS = 20
+SD_STEPS = 25
 SD_GUIDANCE = 7.5
+SD_SAMPLER = "dpm++2m"
 
 # Book specs
 PAGES_PER_BOOK = 30
