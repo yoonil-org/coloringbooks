@@ -6,6 +6,10 @@
   <a href="/books" class="back-link">← Catalog</a>
   <h1>{{ book.title or book.slug or "Book #" ~ book.id }}</h1>
   <span class="badge badge-{{ book.kdp_status or 'pending' }}">{{ book.kdp_status or "pending" }}</span>
+  <div class="download-btns">
+    <a href="/books/{{ book.id }}/download/pdf" class="btn btn-sm" download>⬇ PDF</a>
+    <a href="/books/{{ book.id }}/download/images" class="btn btn-sm" download>⬇ Images (ZIP)</a>
+  </div>
 </div>
 
 <div class="grid grid-2">

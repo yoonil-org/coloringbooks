@@ -4,16 +4,18 @@ FastAPI + Jinja2, served on port 8082
 """
 from __future__ import annotations
 
+import io
 import shutil
 import sqlite3
 import subprocess
+import zipfile
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
 import requests
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -311,6 +313,42 @@ async def api_status():
 @app.get("/api/log")
 async def api_log(n: int = 50):
     return {"lines": tail_log(n)}
+
+
+@app.get("/books/{book_id}/download/pdf")
+async def download_pdf(book_id: int):
+    book = query_one("SELECT * FROM books WHERE id=?", (book_id,))
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    pdf_path = book["interior_pdf"]
+    if not pdf_path or not Path(pdf_path).exists():
+        raise HTTPException(status_code=404, detail="PDF not found")
+    filename = f"{book['slug'] or book_id}_interior.pdf"
+    return FileResponse(pdf_path, media_type="application/pdf", filename=filename)
+
+
+@app.get("/books/{book_id}/download/images")
+async def download_images(book_id: int):
+    book = query_one("SELECT * FROM books WHERE id=?", (book_id,))
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    slug     = book["slug"]     or str(book_id)
+    run_date = book["run_date"] or ""
+    img_dir  = OUTPUT_DIR / run_date / slug / "images"
+    if not img_dir.exists():
+        raise HTTPException(status_code=404, detail="Images not found")
+    images = sorted(p for p in img_dir.iterdir() if p.suffix.lower() in (".png", ".jpg", ".jpeg"))
+    if not images:
+        raise HTTPException(status_code=404, detail="No images found")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for img in images:
+            zf.write(img, img.name)
+    buf.seek(0)
+    filename = f"{slug}_images.zip"
+    return StreamingResponse(buf, media_type="application/zip",
+                             headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @app.get("/api/system")
