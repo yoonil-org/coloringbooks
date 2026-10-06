@@ -137,7 +137,6 @@ def main():
                 log.info(f"Step 5: WAITING FOR PUBLISH APPROVAL — review the book then run:")
                 log.info(f"  touch {approval_file}")
                 log.info(f"  or use the dashboard Approve button")
-                import time
                 while not approval_file.exists():
                     time.sleep(30)
                 log.info("Step 5: Publish approved — proceeding with KDP upload")
