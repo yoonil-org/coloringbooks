@@ -131,6 +131,17 @@ def main():
 
         # Step 5: KDP upload
         if not args.dry_run:
+            # Wait for manual approval before publishing
+            approval_file = book_dir / "APPROVE_PUBLISH"
+            if not approval_file.exists():
+                log.info(f"Step 5: WAITING FOR PUBLISH APPROVAL — review the book then run:")
+                log.info(f"  touch {approval_file}")
+                log.info(f"  or use the dashboard Approve button")
+                import time
+                while not approval_file.exists():
+                    time.sleep(30)
+                log.info("Step 5: Publish approved — proceeding with KDP upload")
+
             log.info("Step 5: KDP upload")
             asin = kdp_uploader.run(
                 pdf_paths=pdf_paths,

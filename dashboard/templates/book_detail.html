@@ -9,8 +9,25 @@
   <div class="download-btns">
     <a href="/books/{{ book.id }}/download/pdf" class="btn btn-sm" download>⬇ PDF</a>
     <a href="/books/{{ book.id }}/download/images" class="btn btn-sm" download>⬇ Images (ZIP)</a>
+    {% if book.kdp_status == 'pending' %}
+    <button class="btn btn-sm btn-approve" onclick="approvePublish({{ book.id }})">✅ Approve & Publish</button>
+    {% endif %}
   </div>
 </div>
+
+<script>
+async function approvePublish(bookId) {
+  if (!confirm('Approve this book for KDP publishing?')) return;
+  const r = await fetch(`/api/approve-publish/${bookId}`, {method: 'POST'});
+  const d = await r.json();
+  if (d.ok) {
+    alert('Approved! The pipeline will now proceed with KDP upload.');
+    location.reload();
+  } else {
+    alert('Error: ' + (d.detail || 'Unknown error'));
+  }
+}
+</script>
 
 <div class="grid grid-2">
   <!-- Metadata -->

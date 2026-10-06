@@ -351,6 +351,21 @@ async def download_images(book_id: int):
                              headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
+@app.post("/api/approve-publish/{book_id}")
+async def api_approve_publish(book_id: int):
+    book = query_one("SELECT * FROM books WHERE id=?", (book_id,))
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    slug     = book["slug"]     or str(book_id)
+    run_date = book["run_date"] or ""
+    book_dir = OUTPUT_DIR / run_date / slug
+    if not book_dir.exists():
+        raise HTTPException(status_code=404, detail="Book output directory not found")
+    approval_file = book_dir / "APPROVE_PUBLISH"
+    approval_file.touch()
+    return {"ok": True, "path": str(approval_file)}
+
+
 @app.get("/api/system")
 async def api_system():
     last_run = get_last_run()
